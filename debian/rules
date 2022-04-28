@@ -1,4 +1,60 @@
 #!/usr/bin/make -f
 
+export DH_VERBOSE=1
+ifeq ($(shell uname -s),GNU/kFreeBSD)
+    PLATFORM:=freebsd
+else
+    PLATFORM:=linux
+endif
+
+# This has to be exported to make some magic below work.
+export DH_OPTIONS
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+
+# this is used by ./Configure
+LSOF_CFGF := $(shell dpkg-buildflags --get CFLAGS) $(shell dpkg-buildflags --get CPPFLAGS)
+export LSOF_CFGF
+LSOF_CFGL := $(shell dpkg-buildflags --get LDFLAGS)
+export LSOF_CFGL
+# prevent recording of details of the build environment to ensure build
+# reproducibility
+LSOF_CCDATE := none
+LSOF_HOST := none
+LSOF_LOGNAME := none
+LSOF_SYSINFO := none
+LSOF_USER := none
+export LSOF_CCDATE LSOF_HOST LSOF_LOGNAME LSOF_SYSINFO LSOF_USER
+
+DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+ifneq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+    export LSOF_CC := $(DEB_HOST_GNU_TYPE)-gcc
+    export LSOF_CCV := $(shell $(LSOF_CC) -v 2>&1 | sed -n 's/.*version \(.*\)/\1/p')
+    export LINUX_CONF_CC := gcc
+    export LSOF_AR := $(DEB_HOST_GNU_TYPE)-ar cr
+    export LSOF_RANLIB := $(DEB_HOST_GNU_TYPE)-ranlib
+    # Autodetection will fail.
+    LSOF_CFGF += -DHAS_STRFTIME
+endif
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f dfile.c dlsof.h dmnt.c dnode.c dproc.c dproto.h dsock.c dstore.c machine.h Makefile
+	rm -f lib/Makefile
+	cd tests && make clean && cd -
+	rm -f tests/config.cc tests/config.cflags tests/config.ldflags tests/config.xobj
+
+override_dh_auto_configure:
+	./Configure -n ${PLATFORM}
+
+override_dh_installchangelogs:
+	dh_installchangelogs 00DIST
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cd tests && make test && make opt && cd -
+endif
+
 %:
 	dh $@
